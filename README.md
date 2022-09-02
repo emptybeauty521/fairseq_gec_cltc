@@ -7,3 +7,9 @@
 ```bash pretrain.sh```  
 4.生成微调或精调数据的对齐信息  
 ```bash align.sh```  
+5.微调  
+```bash train.sh```  
+6.精调  
+```bash train_sec.sh```  
+7.测试  
+```python predict.py```
