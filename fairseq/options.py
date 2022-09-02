@@ -240,7 +240,7 @@ def add_dataset_args(parser, train=False, gen=False):
         group.add_argument('--positive-label-weight', default=1, type=float, metavar='FP',
                            help='positive example loss weight')
         group.add_argument('--label-gen-loss-rate', default=1, type=float, metavar='FP',
-                           help='token-level labeling task的损失与decoder生成tokens的损失的比例')
+                           help='token-level labeling task的损失与decoder生成tokens的损失的权重比')
     if gen:
         group.add_argument('--gen-subset', default='test', metavar='SPLIT',
                            help='data subset to generate (train, valid, test)')
