@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-set -e
-set -x
-
 # 文章数量，每分片的文章数量，并行处理的进程数量
 txt_num=3072447
 num_per_split=620000
