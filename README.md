@@ -12,4 +12,11 @@
 6.精调  
 ```bash train_sec.sh```  
 7.测试  
-```python predict.py```
+```# 使用多个模型进行预测时模型路径用英文冒号分隔
+CUDA_VISIBLE_DEVICES=1 python predict.py --data ./data/cltc/test/cged2021.src \
+--output ./data/cltc/test \
+--model_path ./model/ft_lang8_all_cged_all_cltc7_7/checkpoint1.pt:./model/ft_lang8_all_cged_all_cltc4_9/checkpoint5.pt:./model/ft_lang8_all_cged_all_cltc4_10/checkpoint5.pt \
+--batch_size 128 \
+--beam_size 4 \
+--round 3
+```
