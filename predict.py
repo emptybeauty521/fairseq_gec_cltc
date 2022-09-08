@@ -10,9 +10,8 @@ Translate raw text with a trained model. Batches data on-the-fly.
 """
 
 from collections import namedtuple
-import fileinput
 import sys
-import logging
+import argparse
 from difflib import Differ
 from time import time
 import re
@@ -24,11 +23,10 @@ from fairseq import data, options, tasks, tokenizer, utils
 from fairseq.sequence_generator import SequenceGenerator
 from fairseq.utils import import_user_module
 
-# from flask import Flask, request, jsonify
 import numpy as np
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 Batch = namedtuple('Batch', 'ids src_tokens src_lengths, src_strs')
 Translation = namedtuple('Translation', 'src_str hypos pos_scores alignments')
 
@@ -37,7 +35,7 @@ class Args():
     def __init__(self, model_path="./model/ft_lang8_all_cged1620_cltc7_7/checkpoint3.pt:./model/ft_lang8_all_cged1620_cltc4_9/checkpoint3.pt:./model/ft_lang8_all_cged1620_cltc4_10/checkpoint3.pt", dict_path = ["./dicts"], raw_text=True,
                  batch_size=128, max_tokens=14464, max_len_a=0, max_len_b=113, beam_size=4, nbest=1, replace_unk=None,
                  copy_ext_dict=True, no_early_stop=False, print_alignment=False, no_progress_bar=True, max_len=112,
-                 cpu=False, epoch=3,
+                 cpu=False, round=3,
                  seps_list=[r'''(?P<punc>([。！？!?]|……|\.{6})[”"]?|\.[”"])''', r'''(?P<punc>[；;])''', r'''(?P<punc>[：，、.,:])''']):
         self.batch_size = batch_size
         self.beam = beam_size
@@ -60,7 +58,7 @@ class Args():
         self.match_source_len = False
         self.max_len_a = max_len_a
         self.max_len_b = max_len_b
-        self.max_sentences = batch_size
+        self.max_sentences = self.batch_size
         self.max_source_positions = 113
         self.max_target_positions = 113
         self.max_tokens = max_tokens
@@ -68,7 +66,6 @@ class Args():
         self.min_len = 1
         self.min_loss_scale = 0.0001
         self.model_overrides = "{}"
-        # self.model_overrides = "{'use_encoder_classification': False, 'use_sentence_copying': False}"
         self.nbest = nbest
         self.no_beamable_mm = False
         self.no_early_stop = no_early_stop
@@ -105,15 +102,14 @@ class Args():
         self.seps = seps_list
         self.max_len = max_len
 
-        self.epoch = epoch
+        self.round = round
 
 
 class GECServer():
-    def __init__(self, args, logger):
+    def __init__(self, args):
         self.args = args
-        self.logger = logger
         self.use_cuda = torch.cuda.is_available() and not args.cpu
-        self.epoch = 0
+        self.round = 0
 
         # Setup task, e.g., translation
         self.task = tasks.setup_task(args)
@@ -138,7 +134,6 @@ class GECServer():
         args = self.args
 
         # Load ensemble
-        # self.logger.info('| loading model(s) from {}'.format(args.path))
         print('| loading model(s) from {}'.format(args.path))
         self.models, _model_args = utils.load_ensemble_for_inference(
             args.path.split(':'), task, model_arg_overrides=eval(args.model_overrides),
@@ -152,7 +147,7 @@ class GECServer():
             model.make_generation_fast_(
                 beamable_mm_beam_size=None if args.no_beamable_mm else args.beam,
                 need_attn=args.print_alignment or args.copy_ext_dict,
-            )   # 生成时计算attention
+            )
             if args.fp16:
                 model.half()
             if self.use_cuda:
@@ -257,21 +252,14 @@ class GECServer():
     def correct_sents(self, texts):
         args = self.args
 
-        # 切分文本。分句保持原样？
+        # 切分文本。
         regexp = r"\s|\\n|\\r"
         txt_id, sents = [], []
         for text in texts:
-            # 样本中r"\n"、r"\r"实际代表1个字符
-            # sts = self.split_art(re.sub(regexp, "я", text))
             text = re.sub(regexp, "я", text)
             sts = self.split_art(text) if len(text) > 112 else [text]
-            # sts = [" ".join(st) + "я" for st in sts]   # 解决生成时的多余文本问题
-            # 解决多余文本问题。请求文本字符之间不以空格分隔
             # 替换文本中的空白符为я，输入模型后变为unk，避免以空格分词产生的问题
-            # sts = [" ".join(st.replace(" ", "я")) + "\n" for st in sts]
-            # sts = [" ".join(st) for st in sts]
             sts = [" ".join(st.lower()) for st in sts]
-            # sts = [st + "\n" for st in sts]
             t_id = txt_id[-1] + len(sts) if txt_id else len(sts)
             txt_id.append(t_id)
             sents.extend(sts)
@@ -318,15 +306,11 @@ class GECServer():
                 )
 
                 regexp = r"<eos>|<unk>"
-                # src_str, hypo_str = src_str.replace("<unk>", "|").replace(" ", ""), re.sub(regexp, "|", hypo_str).replace(" ", "")
-                # cors = self.get_edits(src_str, hypo_str)
-                # corrects.append(cors)
                 hypo_str = re.sub(regexp, "|", hypo_str).replace(" ", "")
 
                 token_scores = torch.exp(hypo["positional_scores"]).tolist()
                 score = np.exp(hypo['score'])
 
-                # print("score ", score)
                 # scores.append(score)
 
                 # 统计错误句子，正确句子，所有句子。分句后？
@@ -404,22 +388,22 @@ class GECServer():
                     else:
                         txt = txt[:edit[1]] + txt[edit[2]:]
 
-            if self.args.epoch == 1:
+            if self.args.round == 1:
                 corrects[i] = " ".join(txt)
             else:
                 corrects[i] = txt
 
-        self.epoch += 1
-        if self.epoch == self.args.epoch:
-            if self.args.epoch == 1:
-                self.epoch -= 1
+        self.round += 1
+        if self.round == self.args.round:
+            if self.args.round == 1:
+                self.round -= 1
             return corrects
 
         # 多轮纠错，最终纠错结果和起始输入比对；当次纠错结果和输入比对
         corrects = self.correct_sents(corrects)
-        self.epoch -= 1
+        self.round -= 1
 
-        if self.epoch == 1:
+        if self.round == 1:
             # 舍弃非中文、纠错前后长度差大于8的纠错，修改原句
             # [err_type, err_start, err_end, err_str, cor_str, cor_start]
             assert len(texts) == len(corrects)
@@ -433,7 +417,7 @@ class GECServer():
                             txt = txt[:edit[1]] + txt[edit[2]:]
                 corrects[i] = " ".join(txt)
 
-            self.epoch -= 1
+            self.round -= 1
 
         return corrects
 
@@ -510,7 +494,6 @@ class GECServer():
                         return chinese_flag
 
                     # 不在句末纠错，一般为标点符号；过滤纠错长度>4
-                    # abs(len(err_str) - len(cor_str)) > 8
                     # if not is_chinese(err_str) or not is_chinese(cor_str) or len(err_str) > 4 or len(cor_str) > 4 or err_start == (len(src_str) - 1):
                     #     err_type = "C"
                     if err_type != "C":
@@ -540,93 +523,50 @@ class GECServer():
         return pred_sents
 
 
-logging.basicConfig(filename='./log/server.log', format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                    datefmt='%m/%d/%Y %H:%M:%S', level=logging.INFO)
-logger = logging.getLogger(__name__)
+def local_infer():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data', type=str, default=None, required=True, help="预测数据路径")
+    parser.add_argument('--output', type=str, default=None, required=True, help="预测结果路径")
+    parser.add_argument('--model_path', type=str, default=None, required=True, help="模型路径")
+    parser.add_argument('--batch_size', type=int, default=64, help="每批预测的数据量")
+    parser.add_argument('--beam_size', type=int, default=4, help="beam search size")
+    parser.add_argument('--round', type=int, default=3, help="纠错轮数")
+    pred_args = parser.parse_args()
 
-args = Args()
-gec_server = GECServer(args, logger)
-gec_server.load_model()
+    args = Args()
+    args.path = pred_args.model_path
+    args.batch_size = pred_args.batch_size
+    args.max_tokens = args.batch_size * args.max_source_positions
+    args.beam = pred_args.beam_size
+    args.round = pred_args.round
 
-# app = Flask(__name__)
-#
-# @app.route('/correct', methods=['POST'])
-# def gec():
-#     try:
-#         data = request.data.decode('utf-8')
-#     except Exception as e:
-#         logger.info(e)
-#         data = None
-#
-#     if data:
-#         texts = data.split('|||')
-#         corrects = gec_server.correct_sents(texts)
-#         results = jsonify(corrects=corrects)
-#     else:
-#         results = bad_request()
-#     return results
-#
-# @app.errorhandler(400)
-# def bad_request():
-#     message = {
-#         'status': 400,
-#         'message': 'Bad data',
-#     }
-#     resp = jsonify(message)
-#     resp.status_code = 400
-#     return resp
+    gec_server = GECServer(args)
+    gec_server.load_model()
 
-def local_infer(bs=6400):
-    # f_path = r"./data/benchmark"
     f_path = r"./data/cltc/test"
-    # 预测数据文件名的后半部分
-    # test_lable = "ft_dae2_5_lb_plw2_5_4.txt"
     test_lable = "ft455_lang8_all_cged1620_cltc744_cged_test.txt"
-    # test_lable = "test.txt"
-    # 测试数据文件名的开始部分
-    # file_pre = "bm_all_norm"
-    # file_pre = "ctc"
-    # file_pre = "sc"
-    # file_pre = "sighan"
-    # file_pre = "bm_all_norm"
-    # file_pre = "site_collection_split"
     file_pre = "cged_test"
 
     regexp = r"\s|\\n|\\r"
-    # file = os.path.join(f_path, file_pre + ".src-tgt.src")
     file = os.path.join(f_path, file_pre + ".src")
     with open(file, "r", encoding="utf-8") as f:
         src_txts = f.readlines()
-
-        # 微调数据
-        # src_txts = [src_txt.rstrip("\n").replace(" ", "") for src_txt in src_txts]
-
-        # txts = list(src_txts)
-
-        # src_txts = [re.sub(regexp, "я", src_txt.rstrip("\n")) for src_txt in src_txts]
-
-        # src_txts = [src_txt[10:].rstrip("\n") for src_txt in src_txts]
-
         src_txts = [src_txt.strip().split("\t")[1] for src_txt in src_txts]
 
-    file_pre = "cged_test_bert"
-    file = os.path.join(f_path, file_pre + ".src")
-    with open(file, "r", encoding="utf-8") as f:
-        bert_preds = f.readlines()
-        bert_preds = [pred.strip().split("\t")[1] for pred in bert_preds]
-
+    # file_pre = "cged_test_bert"
+    # file = os.path.join(f_path, file_pre + ".src")
+    # with open(file, "r", encoding="utf-8") as f:
+    #     bert_preds = f.readlines()
+    #     bert_preds = [pred.strip().split("\t")[1] for pred in bert_preds]
     # src_txts = gec_server.filter_edits(src_txts, bert_preds)
 
     t_start = time()
     pred_txts = []
+    bs = pred_args.batch_size
     for i in range(0, len(src_txts), bs):
         preds = gec_server.correct_sents(src_txts[i:(i+bs)])
-
-        # preds = [txts[j][:10] + pd for j, pd in enumerate(preds)]
-
         pred_txts.extend(preds)
     print("纠错耗时", time() - t_start)
-    # pred_txts = [" ".join(pred_txt) + "\n" for pred_txt in pred_txts]
     pred_txts = [pred_txt + "\n" for pred_txt in pred_txts]
 
     file = os.path.join(f_path, "predict_result_" + test_lable)
@@ -635,5 +575,4 @@ def local_infer(bs=6400):
 
 
 if __name__ == '__main__':
-    # app.run(host='0.0.0.0', port=5201)
     local_infer()
