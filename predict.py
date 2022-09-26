@@ -524,32 +524,29 @@ class GECServer():
 
 
 def local_infer():
+    """
+    对指定源文件中的文本进行纠错并输出结果到指定路径
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default=None, required=True, help="预测数据路径")
     parser.add_argument('--output', type=str, default=None, required=True, help="预测结果路径")
     parser.add_argument('--model_path', type=str, default=None, required=True, help="模型路径")
     parser.add_argument('--batch_size', type=int, default=64, help="每批预测的数据量")
-    parser.add_argument('--beam_size', type=int, default=4, help="beam search size")
+    parser.add_argument('--beam_size', type=int, default=4, help="beam search大小")
     parser.add_argument('--round', type=int, default=3, help="纠错轮数")
     pred_args = parser.parse_args()
 
     args = Args()
     args.path = pred_args.model_path
     args.batch_size = pred_args.batch_size
-    args.max_tokens = args.batch_size * args.max_source_positions
+    args.max_tokens = args.batch_size * max(args.max_source_positions, args.max_target_positions)
     args.beam = pred_args.beam_size
     args.round = pred_args.round
 
     gec_server = GECServer(args)
     gec_server.load_model()
 
-    f_path = r"./data/cltc/test"
-    test_lable = "ft455_lang8_all_cged1620_cltc744_cged_test.txt"
-    file_pre = "cged_test"
-
-    regexp = r"\s|\\n|\\r"
-    file = os.path.join(f_path, file_pre + ".src")
-    with open(file, "r", encoding="utf-8") as f:
+    with open(pred_args.data, "r", encoding="utf-8") as f:
         src_txts = f.readlines()
         src_txts = [src_txt.strip().split("\t")[1] for src_txt in src_txts]
 
@@ -560,6 +557,7 @@ def local_infer():
     #     bert_preds = [pred.strip().split("\t")[1] for pred in bert_preds]
     # src_txts = gec_server.filter_edits(src_txts, bert_preds)
 
+    # 每次纠正batch_size个样本
     t_start = time()
     pred_txts = []
     bs = pred_args.batch_size
@@ -567,9 +565,9 @@ def local_infer():
         preds = gec_server.correct_sents(src_txts[i:(i+bs)])
         pred_txts.extend(preds)
     print("纠错耗时", time() - t_start)
-    pred_txts = [pred_txt + "\n" for pred_txt in pred_txts]
 
-    file = os.path.join(f_path, "predict_result_" + test_lable)
+    pred_txts = "\n".join(pred_txts) + "\n"
+    file = os.path.join(pred_args.output, "predict_result.txt")
     with open(file, "w", encoding="utf-8") as f:
         f.writelines(pred_txts)
 
