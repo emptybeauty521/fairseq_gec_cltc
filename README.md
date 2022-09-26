@@ -12,7 +12,8 @@ pyhanlp
 ```bash preprocess.sh```  
 ### 预训练  
 ```bash pretrain.sh```  
-### 生成微调或精调数据的对齐信息（需要安装fast_align和Moses 4.0）  
+### 生成微调或精调数据的对齐信息
+需要安装fast_align和Moses 4.0  
 ```bash align.sh```  
 ### 微调  
 ```bash train.sh```  
