@@ -1,8 +1,8 @@
 # CLTC2022 fairseq_gec语法纠错
-依赖
-python >= 3.6
-pyTorch >= 1.0.0
-pyhanlp
+依赖  
+python >= 3.6  
+pyTorch >= 1.0.0  
+pyhanlp  
 1.生成伪纠错数据  
 ```bash noise.sh```  
 2.预处理为二进制数据  
