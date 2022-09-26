@@ -5,19 +5,19 @@ python >= 3.6
 pyTorch >= 1.0.0  
 pyhanlp
 ```
-1.生成伪纠错数据  
+### 生成伪纠错数据  
 ```bash noise.sh```  
-2.预处理为二进制数据  
+### 预处理为二进制数据  
 ```bash preprocess.sh```  
-3.预训练  
+### 预训练  
 ```bash pretrain.sh```  
-4.生成微调或精调数据的对齐信息（需要安装fast_align和Moses 4.0）  
+### 生成微调或精调数据的对齐信息（需要安装fast_align和Moses 4.0）  
 ```bash align.sh```  
-5.微调  
+### 微调  
 ```bash train.sh```  
-6.精调  
+### 精调  
 ```bash train_sec.sh```  
-7.测试  
+### 测试  
 ```
 # 使用多个模型进行预测时模型路径用英文冒号分隔
 CUDA_VISIBLE_DEVICES=1 python predict.py --data ./data/cltc/test/cged2021.src \
