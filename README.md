@@ -3,6 +3,7 @@
 ```
 python >= 3.6  
 pyTorch >= 1.0.0  
+pip install -e ./ (安装项目中的fairseq)
 pyhanlp
 ```
 ### 生成伪纠错数据  
