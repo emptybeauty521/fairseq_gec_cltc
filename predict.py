@@ -32,7 +32,7 @@ Translation = namedtuple('Translation', 'src_str hypos pos_scores alignments')
 
 
 class Args():
-    def __init__(self, model_path="./model/ft_lang8_all_cged1620_cltc7_7/checkpoint3.pt:./model/ft_lang8_all_cged1620_cltc4_9/checkpoint3.pt:./model/ft_lang8_all_cged1620_cltc4_10/checkpoint3.pt", dict_path = ["./dicts"], raw_text=True,
+    def __init__(self, model_path="./model/ft_lang8_all_cged_all_cltc7_7/checkpoint1.pt", dict_path = ["./dicts"], raw_text=True,
                  batch_size=128, max_tokens=14464, max_len_a=0, max_len_b=113, beam_size=4, nbest=1, replace_unk=None,
                  copy_ext_dict=True, no_early_stop=False, print_alignment=False, no_progress_bar=True, max_len=112,
                  cpu=False, round=3,
@@ -41,7 +41,7 @@ class Args():
         self.beam = beam_size
         self.copy_ext_dict = copy_ext_dict
         self.cpu = cpu
-        self.data = dict_path
+        self.data = dict_path   # 模型字典路径
         self.diverse_beam_groups = -1
         self.diverse_beam_strength = 0.5
         self.fp16 = False
@@ -98,6 +98,7 @@ class Args():
         self.upsample_primary = 1
         self.user_dir = None
 
+        # 分句层级，分句符，分句长度
         self.split_level = 0
         self.seps = seps_list
         self.max_len = max_len
@@ -153,6 +154,7 @@ class GECServer():
             if self.use_cuda:
                 model.cuda()
 
+        # 不进行unk替换
         # Load alignment dictionary for unknown word replacement
         # (None if no unknown word replacement, empty if no path to align dictionary)
         self.align_dict = utils.load_align_dict(args.replace_unk)
@@ -213,7 +215,7 @@ class GECServer():
             seps = self.args.seps[self.args.split_level - 1]
             art = re.sub(seps, self._convert_sep, art)
             sents = art.split("|||")
-            if sents[-1] == "": # 去掉空句 2020.11.24
+            if sents[-1] == "": # 去掉空句
                 sents = sents[:-1]
 
             concat_sent = ""
@@ -227,11 +229,11 @@ class GECServer():
                         else:
                             art_sents.append(concat_sent)
                             concat_sent = sent  # 缓存当前句
-                        if i == len(sents) - 1:  # 保存最后一个<max_len的句子 2020.11.24
+                        if i == len(sents) - 1:  # 保存最后一个<max_len的句子
                             art_sents.append(concat_sent)
                 else:
                     if self.args.split_level == 3 and concat_sent:
-                        # 当前句子>max_len，拼接操作中断，保存前一句子，从下一句子重新开始拼接 2020.11.23
+                        # 当前句子>max_len，拼接操作中断，保存前一句子，从下一句子重新开始拼接
                         art_sents.append(concat_sent)
                         concat_sent = ""
                     sub_sents = self.split_art(sent)
@@ -250,15 +252,19 @@ class GECServer():
         return art_sents
 
     def correct_sents(self, texts):
+        """
+        对输入文本纠错
+        """
         args = self.args
 
-        # 切分文本。
+        # 切分文本，其长度大于args.max_len时
+        # 替换文本中空白符为я，输入模型后变为unk，避免以空格分词产生的问题；字符转小写
+        # 对分句编号以便恢复输入句子
         regexp = r"\s|\\n|\\r"
         txt_id, sents = [], []
         for text in texts:
             text = re.sub(regexp, "я", text)
-            sts = self.split_art(text) if len(text) > 112 else [text]
-            # 替换文本中的空白符为я，输入模型后变为unk，避免以空格分词产生的问题
+            sts = self.split_art(text) if len(text) > args.max_len else [text]
             sts = [" ".join(st.lower()) for st in sts]
             t_id = txt_id[-1] + len(sts) if txt_id else len(sts)
             txt_id.append(t_id)
@@ -269,6 +275,7 @@ class GECServer():
         corrects = []
         scores = []
 
+        # 纠错
         for batch in self.make_batches(sents):
             src_tokens = batch.src_tokens
             src_lengths = batch.src_lengths
@@ -284,6 +291,7 @@ class GECServer():
                 },
             }
 
+            # 推理
             translations = self.task.inference_step(self.generator, self.models, sample)
             for i, (id, hypos) in enumerate(zip(batch.ids.tolist(), translations)):
                 src_tokens_i = utils.strip_pad(src_tokens[i], self.tgt_dict.pad())
@@ -295,6 +303,7 @@ class GECServer():
             #     src_str = self.src_dict.string(src_tokens, args.remove_bpe)
 
             # Process top predictions
+            # 只利用了最佳结果，args.nbest=1
             for hypo in hypos[:min(len(hypos), args.nbest)]:
                 hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
                     hypo_tokens=hypo['tokens'].int().cpu(),
@@ -308,32 +317,30 @@ class GECServer():
                 regexp = r"<eos>|<unk>"
                 hypo_str = re.sub(regexp, "|", hypo_str).replace(" ", "")
 
+                # token生成概率。句子生成概率
                 token_scores = torch.exp(hypo["positional_scores"]).tolist()
                 score = np.exp(hypo['score'])
 
                 # scores.append(score)
 
-                # 统计错误句子，正确句子，所有句子。分句后？
+                # 句子级置信度
                 # sent num, avg score, min score, max score  2467 0.908242720494238 0.6215933723683859 0.9953903153107126
                 # if score < 0.9082:
                 #     hypo_str = sents[id].replace(" ", "")
 
-                # [err_type, err_start, err_end, err_str, cor_str, cor_start]
+                # token级置信度：修正文本中token生成概率求和取平均
                 # src_str = sents[id].replace(" ", "")
                 # edits = self.get_edits(src_str, hypo_str)
-                #
                 # if edits:
                 #     for i, edit in enumerate(deepcopy(edits)):
                 #         edit_flag = True
-                #         # 修正文本中的token有<阈值的时就过滤访修正
                 #         # if edit[0] != "R" and any([True if token_scores[edit[-1] + j] < 0.6499 else False for j, c in enumerate(edit[4])]):
-                #         if edit[0] != "R" and np.mean([token_scores[edit[-1] + j] for j, c in enumerate(edit[4])]) < 0.:#51875:
-                #                 # or edit[0] == "R" and score < 0.89875:   # 0.58875 0.89875   # 0.59 0.55
+                #         if edit[0] != "R" and np.mean([token_scores[edit[-1] + j] for j, c in enumerate(edit[4])]) < 0.51875:
+                #                 # or edit[0] == "R" and score < 0.89875:
                 #             edit_flag = False
                 #         edits[i][-1] = edit_flag
 
-                        # sent num, avg score, min score, max score  2260 0.6499240523632781 0.0452645942568779 0.9999938607215881
-                        # "O", err_str==cor_str？
+                        # sent num; token: avg score, min score, max score  2260 0.6499240523632781 0.0452645942568779 0.9999938607215881
                         # if edit[0] != "R":
                         #     scores.extend([token_scores[edit[-1] + j] for j, c in enumerate(edit[4])])
 
@@ -344,8 +351,7 @@ class GECServer():
                 #     i = 0
                 #     while i < edits_num:
                 #         edit_flag = True
-                #         if edits[i][0] != "R" and any(
-                #                 [True if token_scores[edits[i][-1] + j] < 0 else False for j, c in enumerate(edits[i][4])]):
+                #         if edits[i][0] != "R" and any([True if token_scores[edits[i][-1] + j] < 0 else False for j, c in enumerate(edits[i][4])]):
                 #             edit_flag = False
                 #         # if edits[i][0] != "R":
                 #         #     scores.extend([token_scores[edits[i][-1] + j] for j, c in enumerate(edits[i][4])])
@@ -358,10 +364,11 @@ class GECServer():
                 #     #     print(e)
                 #     #     exit(-1)
 
+                    # 用过滤后的edits修正输入句子而作为输出结果
+                    # 不纠错<8的句子
                     # hypo_str = src_str
-                    # # edits merge, 无错/有错（纠对）token-->edit阈值，token edit flag-->get_edits()
                     # edits = [edit[:-1] for edit in edits if edit[-1]]
-                    # if edits and len(src_str) >= 8: # <8不纠错
+                    # if edits and len(src_str) >= 8:
                     #     for edit in edits[::-1]:
                     #         if edit[0] != "R":
                     #             hypo_str = hypo_str[:edit[1]] + edit[4] + hypo_str[edit[2]:]
@@ -373,26 +380,28 @@ class GECServer():
         # print("sent num, avg score, min score, max score ", len(scores), np.mean(scores), np.min(scores), np.max(scores))
         # exit(-1)
 
-        # 合并句子以还原文本
+        # 合并分句以还原输入句子
         corrects = ["".join(corrects[txt_id[i-1]:t_id]) if i > 0 else "".join(corrects[:t_id]) for i, t_id in enumerate(txt_id)]
 
         # 舍弃非中文、纠错前后长度差大于8的纠错，修改原句
-        # [err_type, err_start, err_end, err_str, cor_str, cor_start]
-        assert len(texts) == len(corrects)
-        for i, txt in enumerate(texts):
-            edits = self.get_edits(txt, corrects[i])
-            if edits and len(txt) >= 8: # <8不纠错
-                for edit in edits[::-1]:
-                    if edit[0] != "R":
-                        txt = txt[:edit[1]] + edit[4] + txt[edit[2]:]
-                    else:
-                        txt = txt[:edit[1]] + txt[edit[2]:]
+        # assert len(texts) == len(corrects)
+        # for i, txt in enumerate(texts):
+        #     edits = self.get_edits(txt, corrects[i])
+        #     if edits and len(txt) >= 8:
+        #         for edit in edits[::-1]:
+        #             if edit[0] != "R":
+        #                 txt = txt[:edit[1]] + edit[4] + txt[edit[2]:]
+        #             else:
+        #                 txt = txt[:edit[1]] + txt[edit[2]:]
+        #
+        #     if self.args.round == 1:
+        #         corrects[i] = " ".join(txt)
+        #     else:
+        #         corrects[i] = txt
 
-            if self.args.round == 1:
-                corrects[i] = " ".join(txt)
-            else:
-                corrects[i] = txt
+        corrects = self.filter_edits(texts, corrects)
 
+        # 最后一轮纠错结束后返回其纠错结果到前一轮纠错
         self.round += 1
         if self.round == self.args.round:
             if self.args.round == 1:
@@ -403,27 +412,27 @@ class GECServer():
         corrects = self.correct_sents(corrects)
         self.round -= 1
 
+        # 纠错结束
         if self.round == 1:
-            # 舍弃非中文、纠错前后长度差大于8的纠错，修改原句
-            # [err_type, err_start, err_end, err_str, cor_str, cor_start]
-            assert len(texts) == len(corrects)
-            for i, txt in enumerate(texts):
-                edits = self.get_edits(txt, corrects[i])
-                if edits and len(txt) >= 8:  # <8不纠错
-                    for edit in edits[::-1]:
-                        if edit[0] != "R":
-                            txt = txt[:edit[1]] + edit[4] + txt[edit[2]:]
-                        else:
-                            txt = txt[:edit[1]] + txt[edit[2]:]
-                corrects[i] = " ".join(txt)
+            # assert len(texts) == len(corrects)
+            # for i, txt in enumerate(texts):
+            #     edits = self.get_edits(txt, corrects[i])
+            #     if edits and len(txt) >= 8:  # <8不纠错
+            #         for edit in edits[::-1]:
+            #             if edit[0] != "R":
+            #                 txt = txt[:edit[1]] + edit[4] + txt[edit[2]:]
+            #             else:
+            #                 txt = txt[:edit[1]] + txt[edit[2]:]
+            #     corrects[i] = " ".join(txt)
 
+            corrects = self.filter_edits(texts, corrects)
             self.round -= 1
 
         return corrects
 
     def get_edits(self, src_str, pred_str):
         """
-        添加edits_offset
+        根据输入句子和输出句子获取纠错信息：多字多词、少字少词、别字别词、字词顺序颠倒错误及其位置信息
         :param src_str:
         :param pred_str:
         :return:
@@ -435,8 +444,7 @@ class GECServer():
         err_str, cor_str = "", ""
         diff = list(diff)
         diff_len = len(diff)
-        # 添加字词，位置后移；删除字词，位置前移。乱序错误，添加、删除字词而前后移动相互抵消
-        edits_offset = 0
+        edits_offset = 0    # 输出句子中修正文本相对输入句子中纠错位置的偏移。添加字词，位置后移；删除字词，位置前移。字词顺序颠倒，添加、删除字词而前后偏移相互抵消
         for i, df in enumerate(diff):
             # 不同类型的错误及其组合的纠正，都可以转化为去掉只属于src_str的字或添加只属于pred_str的字
             # 组合错误的纠正，去掉只属于src_str的连续的字，添加只属于pred_str的连续的字
@@ -472,8 +480,7 @@ class GECServer():
                             edits_offset += (len(cor_str) - len(err_str))
                             edits.pop()
                             err_str = src_str[pre_err_start:err_end]
-                            # 之前为少字错误而当前为多字错误
-                            if pre_err_type == "M" and err_type == "R":
+                            if pre_err_type == "M" and err_type == "R": # 之前为少字错误而当前为多字错误
                                 cor_str = pre_cor_str + src_str[pre_err_end:err_start]
                             else:
                                 cor_str = src_str[pre_err_end:err_start] + cor_str
@@ -493,9 +500,10 @@ class GECServer():
                                     break
                         return chinese_flag
 
-                    # 不在句末纠错，一般为标点符号；过滤纠错长度>4
+                    # 不对非中文文本纠错；过滤长度>4的纠错；不在句末纠错，一般为标点符号
                     # if not is_chinese(err_str) or not is_chinese(cor_str) or len(err_str) > 4 or len(cor_str) > 4 or err_start == (len(src_str) - 1):
                     #     err_type = "C"
+
                     if err_type != "C":
                         # edits.append([err_type, err_start, err_end, err_str, cor_str])
                         edits.append([err_type, err_start, err_end, err_str, cor_str, err_start + edits_offset])
@@ -510,10 +518,13 @@ class GECServer():
         return edits
 
     def filter_edits(self, src_sents, pred_sents):
+        """
+        self.get_edits过滤纠错，之后没有错误或长度短的句子，其纠错结果和输入句子一样；有错误的，根据纠错信息对输入句子进行修改而作为输出结果
+        """
         assert len(src_sents) == len(pred_sents)
         for i, txt in enumerate(src_sents):
             edits = self.get_edits(txt, pred_sents[i])
-            if edits and len(txt) >= 8:  # <8不纠错
+            if edits and len(txt) >= 8:
                 for edit in edits[::-1]:
                     if edit[0] != "R":
                         txt = txt[:edit[1]] + edit[4] + txt[edit[2]:]
@@ -525,7 +536,7 @@ class GECServer():
 
 def local_infer():
     """
-    对指定源文件中的文本进行纠错并输出结果到指定路径
+    对指定源文件中的文本进行纠错并输出结果到指定路径。输出文本中的字符以空格分隔
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default=None, required=True, help="预测数据路径")
@@ -566,10 +577,11 @@ def local_infer():
         pred_txts.extend(preds)
     print("纠错耗时", time() - t_start)
 
+    pred_txts = [" ".join(pred_txt) for pred_txt in pred_txts]
     pred_txts = "\n".join(pred_txts) + "\n"
     file = os.path.join(pred_args.output, "predict_result.txt")
     with open(file, "w", encoding="utf-8") as f:
-        f.writelines(pred_txts)
+        f.write(pred_txts)
 
 
 if __name__ == '__main__':
