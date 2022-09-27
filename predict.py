@@ -317,18 +317,18 @@ class GECServer():
                 regexp = r"<eos>|<unk>"
                 hypo_str = re.sub(regexp, "|", hypo_str).replace(" ", "")
 
-                # token生成概率。句子生成概率
-                token_scores = torch.exp(hypo["positional_scores"]).tolist()
-                score = np.exp(hypo['score'])
-
+                # # token生成概率。句子生成概率
+                # token_scores = torch.exp(hypo["positional_scores"]).tolist()
+                # score = np.exp(hypo['score'])
+                #
                 # scores.append(score)
-
-                # 句子级置信度
-                # sent num, avg score, min score, max score  2467 0.908242720494238 0.6215933723683859 0.9953903153107126
+                #
+                # # 句子级置信度
+                # # sent num, avg score, min score, max score  2467 0.908242720494238 0.6215933723683859 0.9953903153107126
                 # if score < 0.9082:
                 #     hypo_str = sents[id].replace(" ", "")
-
-                # token级置信度：修正文本中token生成概率求和取平均
+                #
+                # # token级置信度：修正文本中token生成概率求和取平均
                 # src_str = sents[id].replace(" ", "")
                 # edits = self.get_edits(src_str, hypo_str)
                 # if edits:
@@ -339,12 +339,12 @@ class GECServer():
                 #                 # or edit[0] == "R" and score < 0.89875:
                 #             edit_flag = False
                 #         edits[i][-1] = edit_flag
-
-                        # sent num; token: avg score, min score, max score  2260 0.6499240523632781 0.0452645942568779 0.9999938607215881
-                        # if edit[0] != "R":
-                        #     scores.extend([token_scores[edit[-1] + j] for j, c in enumerate(edit[4])])
-
-                # 调试token_scores bug
+                #
+                #         # sent num; token: avg score, min score, max score  2260 0.6499240523632781 0.0452645942568779 0.9999938607215881
+                #         if edit[0] != "R":
+                #             scores.extend([token_scores[edit[-1] + j] for j, c in enumerate(edit[4])])
+                #
+                # # 调试token_scores bug
                 # edits_num = len(edits)
                 # if edits_num > 0:
                 #     # try:
@@ -353,8 +353,8 @@ class GECServer():
                 #         edit_flag = True
                 #         if edits[i][0] != "R" and any([True if token_scores[edits[i][-1] + j] < 0 else False for j, c in enumerate(edits[i][4])]):
                 #             edit_flag = False
-                #         # if edits[i][0] != "R":
-                #         #     scores.extend([token_scores[edits[i][-1] + j] for j, c in enumerate(edits[i][4])])
+                #         if edits[i][0] != "R":
+                #             scores.extend([token_scores[edits[i][-1] + j] for j, c in enumerate(edits[i][4])])
                 #         edits[i][-1] = edit_flag
                 #         i += 1
                 #     # except Exception as e:
@@ -363,17 +363,17 @@ class GECServer():
                 #     #     print("token_scores", token_scores)
                 #     #     print(e)
                 #     #     exit(-1)
-
-                    # 用过滤后的edits修正输入句子而作为输出结果
-                    # 不纠错<8的句子
-                    # hypo_str = src_str
-                    # edits = [edit[:-1] for edit in edits if edit[-1]]
-                    # if edits and len(src_str) >= 8:
-                    #     for edit in edits[::-1]:
-                    #         if edit[0] != "R":
-                    #             hypo_str = hypo_str[:edit[1]] + edit[4] + hypo_str[edit[2]:]
-                    #         else:
-                    #             hypo_str = hypo_str[:edit[1]] + hypo_str[edit[2]:]
+                #
+                #     # 用过滤后的edits修正输入句子而作为输出结果
+                #     # 不纠错<8的句子
+                #     hypo_str = src_str
+                #     edits = [edit[:-1] for edit in edits if edit[-1]]
+                #     if edits and len(src_str) >= 8:
+                #         for edit in edits[::-1]:
+                #             if edit[0] != "R":
+                #                 hypo_str = hypo_str[:edit[1]] + edit[4] + hypo_str[edit[2]:]
+                #             else:
+                #                 hypo_str = hypo_str[:edit[1]] + hypo_str[edit[2]:]
 
                 corrects.append(hypo_str)
 
@@ -382,22 +382,6 @@ class GECServer():
 
         # 合并分句以还原输入句子
         corrects = ["".join(corrects[txt_id[i-1]:t_id]) if i > 0 else "".join(corrects[:t_id]) for i, t_id in enumerate(txt_id)]
-
-        # 舍弃非中文、纠错前后长度差大于8的纠错，修改原句
-        # assert len(texts) == len(corrects)
-        # for i, txt in enumerate(texts):
-        #     edits = self.get_edits(txt, corrects[i])
-        #     if edits and len(txt) >= 8:
-        #         for edit in edits[::-1]:
-        #             if edit[0] != "R":
-        #                 txt = txt[:edit[1]] + edit[4] + txt[edit[2]:]
-        #             else:
-        #                 txt = txt[:edit[1]] + txt[edit[2]:]
-        #
-        #     if self.args.round == 1:
-        #         corrects[i] = " ".join(txt)
-        #     else:
-        #         corrects[i] = txt
 
         corrects = self.filter_edits(texts, corrects)
 
@@ -414,17 +398,6 @@ class GECServer():
 
         # 纠错结束
         if self.round == 1:
-            # assert len(texts) == len(corrects)
-            # for i, txt in enumerate(texts):
-            #     edits = self.get_edits(txt, corrects[i])
-            #     if edits and len(txt) >= 8:  # <8不纠错
-            #         for edit in edits[::-1]:
-            #             if edit[0] != "R":
-            #                 txt = txt[:edit[1]] + edit[4] + txt[edit[2]:]
-            #             else:
-            #                 txt = txt[:edit[1]] + txt[edit[2]:]
-            #     corrects[i] = " ".join(txt)
-
             corrects = self.filter_edits(texts, corrects)
             self.round -= 1
 
