@@ -7,6 +7,9 @@
 # can be found in the PATENTS file in the same directory.
 """
 Train a new model on one or across multiple GPUs.
+
+修改：
+逐个加载训练数据并训练
 """
 
 import collections
@@ -101,7 +104,6 @@ def main(args, init_distributed=False):
     if not load_checkpoint(args, trainer, epoch_itr):
         trainer.dummy_train_step([dummy_batch])
 
-    # Train until the learning rate gets too small
     max_epoch = args.max_epoch or math.inf
     max_update = args.max_update or math.inf
     lr = trainer.get_lr()
@@ -111,7 +113,6 @@ def main(args, init_distributed=False):
     valid_subsets = args.valid_subset.split(',')
     train_epoch = 0
     while lr > args.min_lr and train_epoch < max_epoch and trainer.get_num_updates() < max_update:
-        # train for one epoch
         # 逐个加载训练集并训练
         trainsets = load_trainsets(task)
         for trainset in trainsets:
@@ -130,11 +131,10 @@ def main(args, init_distributed=False):
             # 所有批次的训练数据训练完成为一轮；epoch_itr.epoch在train()中加1
             # epoch_itr代表某个批次的训练数据，而非所有批次训练数据。epoch_itr.state_dict()影响模型保存时的train_iterator。\
             # 训练按轮进行时，epoch_itr.end_of_epoch不影响训练
-            # 训练日志针对每个批次的训练数据；模型验证在训练完所有批次的训练数据之后
+            # 训练日志针对每个批次的训练数据
             epoch_itr.epoch = train_epoch
             train(args, trainer, task, epoch_itr)
-            # 准备释放训练过的本批训练数据
-            del task.datasets[trainset]
+            del task.datasets[trainset] # 准备释放训练过的本批训练数据
 
         train_epoch += 1
 
@@ -449,49 +449,6 @@ def distributed_main(i, args):
 def cli_main():
     parser = options.get_training_parser()
     args = options.parse_args_and_arch(parser)
-
-    # args.data = ["./data/bin/en"]  # translation.py, nargs "+"-->"*"
-    # args.save_dir = "./model"
-    # args.max_epoch = 10
-    # args.batch_size = 32
-    # args.max_tokens = 3584
-    # args.max_sentences = 32
-    # args.train_subset = "train0_0"
-    # args.valid_subset = "valid0_0"
-    # args.pretrained_model = "./model/pretrain.pt"
-    # args.arch = "transformer"   # options.py, required
-    # args.optimizer = "adam"
-    # args.adam_betas = "(0.9, 0.98)"
-    # args.adam_eps = 1e-8
-    # args.lr = [0.00003]
-    # args.min_lr = 1e-09
-    # args.lr_scheduler = "inverse_sqrt"
-    # args.warmup_init_lr = 1e-07
-    # args.warmup_updates = 16000
-    # args.clip_norm = 5
-    # args.validate_interval = 1
-    # args.dropout = 0.2
-    # args.relu_dropout = 0.2
-    # args.attention_dropout = 0.2
-    # args.copy_attention_dropout = 0.2
-    # args.decoder_layers = 6
-    # args.encoder_layers = 6
-    # args.encoder_embed_dim = 512
-    # args.decoder_embed_dim = 512
-    # args.max_target_positions = 122
-    # args.max_source_positions = 114
-    # args.encoder_ffn_embed_dim = 2048
-    # args.decoder_ffn_embed_dim = 2048
-    # args.encoder_attention_heads = 8
-    # args.decoder_attention_heads = 8
-    # args.share_all_embeddings = True
-    # args.no_progress_bar = True
-    # args.log_interval = 1
-    # args.positive_label_weight = 1.5
-    # args.copy_attention = True
-    # args.copy_attention_heads = 1
-    # args.source_lang = "src"
-    # args.target_lang = "tgt"
 
     try:
         git_branch = subprocess.check_output(['git', 'symbolic-ref', '--short', 'HEAD'])

@@ -7,6 +7,10 @@
 # can be found in the PATENTS file in the same directory.
 """
 Data pre-processing: build vocabularies and binarize training data.
+
+修改：
+分批预处理训练数据，输入文件的命名格式见preprocess.sh
+不检查dict.src.txt、dict.tgt.txt文件是否存在
 """
 
 from collections import Counter, defaultdict
@@ -57,6 +61,7 @@ def main(args):
             padding_factor=args.padding_factor,
         )
 
+    # 不检查dict.src.txt、dict.tgt.txt文件是否存在
     # if not args.srcdict and os.path.exists(dict_path(args.source_lang)):
     #     raise FileExistsError(dict_path(args.source_lang))
     # if target and not args.tgtdict and os.path.exists(dict_path(args.target_lang)):
@@ -197,7 +202,7 @@ def main(args):
         words_list_dict = defaultdict(lambda: None)
 
         if args.trainpref:
-            file_pref = args.trainpref.split(os.path.sep)[-1]
+            file_pref = args.trainpref.split(os.path.sep)[-1]   # 分批预处理训练数据
             words_list_dict["train"] = \
                 make_dataset(vocab, args.trainpref, file_pref, lang, num_workers=args.workers,
                              copy_src_words=source_words_list_dict['train'])
@@ -254,6 +259,8 @@ def main(args):
 
         # save_label_file(os.path.join(args.destdir, "train.label.{}.txt".format(args.source_lang)), src_labels_list)
         # save_label_file(os.path.join(args.destdir, "train.label.{}.txt".format(args.target_lang)), tgt_labels_list)
+
+        # 分批保存训练数据
         file_pref = args.trainpref.split(os.path.sep)[-1]
         save_label_file(os.path.join(args.destdir, "{}.label.{}.txt".format(file_pref, args.source_lang)), src_labels_list)
         save_label_file(os.path.join(args.destdir, "{}.label.{}.txt".format(file_pref, args.target_lang)), tgt_labels_list)
