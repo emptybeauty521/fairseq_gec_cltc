@@ -10,14 +10,14 @@ pyhanlp
 本项目基于fairseq-gec，实现了fairseq-gec对应论文（Improving Grammatical Error Correction via Pre-Training a Copy-Augmented Architecture with Unlabeled Data）中的多任务，对fairseq的修改如下，详见下列源文件：
 ```
 token-level labeling task:  
-  transformer.py
-	cross_entropy.py
+  fairseq/models/transformer.py
+  fairseq/criterions/cross_entropy.py
 sentence-level copying task:
-  translation.py
-	language_pair_dataset.py
-	fairseq_encoder.py
-	fairseq_model.py
-	transformer.py
+  fairseq/tasks/translation.py
+  fairseq/data/language_pair_dataset.py
+  fairseq/models/fairseq_encoder.py
+  fairseq/models/fairseq_model.py
+  fairseq/models/transformer.py
 ```
 ### 生成伪纠错数据  
 ```bash noise.sh```  
