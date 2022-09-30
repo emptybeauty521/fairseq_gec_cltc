@@ -2,6 +2,7 @@
 
 # --use-encoder-classification使用Token级标记任务
 # --positive-label-weight错误Token损失的权重
+# --use-sentence-copying使用句子级复制任务
 DATA_BIN=./data/cltc/pretrain/bin
 CUDA_VISIBLE_DEVICES=3 nohup python train.py $DATA_BIN \
 --save-dir ./model/pretrain_cltc \

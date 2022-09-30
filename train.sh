@@ -2,6 +2,7 @@
 
 # --use-encoder-classification使用Token级标记任务
 # --positive-label-weight错误Token损失的权重
+# --use-sentence-copying使用句子级复制任务
 DATA_BIN=./data/cltc/finetune/lang8_all_bin
 CUDA_VISIBLE_DEVICES=1 nohup python train.py $DATA_BIN \
 --save-dir ./model/ft_lang8_all_cltc7_7 \
