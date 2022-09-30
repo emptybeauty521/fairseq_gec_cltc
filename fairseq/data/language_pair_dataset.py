@@ -4,6 +4,14 @@
 # This source code is licensed under the license found in the LICENSE file in
 # the root directory of this source tree. An additional grant of patent rights
 # can be found in the PATENTS file in the same directory.
+"""
+修改：
+添加 sentence-level copying task:
+    collate(): err_flag
+    get_err_labels()
+    err_label
+    ordered_indices()
+"""
 
 import numpy as np
 import torch
@@ -61,9 +69,10 @@ def collate(
         tgt_label = merge('target_label', left_pad=left_pad_target)
         tgt_label = tgt_label.index_select(0, sort_order)
 
+    # batch_size中的样本包含错误时，err_flag为1，否则为0
+    # dummy/oom batch没有'err_label'属性
     err_flag = False
     # if src_label is not None and tgt_label is not None:
-    # dummy/oom batch没有'err_label'属性
     if samples[0].get('err_label', None) is not None:
         err_labels = np.array([s.get('err_label') for s in samples])
         if (err_labels == 1).any():
@@ -160,6 +169,9 @@ class LanguagePairDataset(FairseqDataset):
         self.err_labels = self.get_err_labels() if err_cor_batch else None
 
     def get_err_labels(self):
+        """
+        获得样本的标签，0 不包含错误，1 包含错误
+        """
         err_labels = None
         if self.src_label and self.tgt_label is not None:
             src_labels = self.src_label.labels_list
@@ -283,10 +295,13 @@ class LanguagePairDataset(FairseqDataset):
             indices = np.random.permutation(len(self))
         else:
             indices = np.arange(len(self))
+
+        # 先根据目标样本排序再根据源样本排序
         if self.tgt_sizes is not None:
             indices = indices[np.argsort(self.tgt_sizes[indices], kind='mergesort')]
         indices = indices[np.argsort(self.src_sizes[indices], kind='mergesort')]
 
+        # 将训练样本按正误分开
         if self.err_labels is not None:
             assert indices.size == self.err_labels.size
             cor_indices = indices[self.err_labels[indices] == 0]
