@@ -4,6 +4,11 @@
 # This source code is licensed under the license found in the LICENSE file in
 # the root directory of this source tree. An additional grant of patent rights
 # can be found in the PATENTS file in the same directory.
+"""
+修改：
+添加 token-level labeling task: get_src_probs()
+添加 sentence-level copying task: err_flag
+"""
 
 import math
 import os
@@ -394,6 +399,9 @@ class TransformerEncoder(FairseqEncoder):
         }
 
     def get_src_probs(self, net_output, log_probs):
+        """
+        获取输入token的二分类概率
+        """
         src_logits = net_output[1]["src_logits"]
         if src_logits is not None:
             probs = F.softmax(src_logits, dim=-1)
@@ -836,6 +844,7 @@ class TransformerDecoderLayer(nn.Module):
             x (Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
             encoder_padding_mask (ByteTensor): binary ByteTensor of shape
                 `(batch, src_len)` where padding elements are indicated by ``1``.
+            err_flag: batch_size中的样本包含错误时，其为1，否则为0
 
         Returns:
             encoded output of shape `(batch, src_len, embed_dim)`
@@ -861,6 +870,7 @@ class TransformerDecoderLayer(nn.Module):
         x = residual + x
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, after=True)
 
+        # batch_size中的样本都不包含错误时忽略编码器解码器注意力
         attn = None
         # if self.encoder_attn is not None:
         if ((not self.training) or (not self.use_sentence_copying) or err_flag) and self.encoder_attn is not None:
