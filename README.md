@@ -6,6 +6,19 @@ pyTorch >= 1.0.0
 pip install -e ./ (安装项目中的fairseq)
 pyhanlp
 ```
+### 多任务  
+本项目基于fairseq-gec，实现了fairseq-gec对应论文（Improving Grammatical Error Correction via Pre-Training a Copy-Augmented Architecture with Unlabeled Data）中的多任务，对fairseq的修改如下，详见下列源文件：
+```
+token-level labeling task:  
+  transformer.py
+	cross_entropy.py
+sentence-level copying task:
+  translation.py
+	language_pair_dataset.py
+	fairseq_encoder.py
+	fairseq_model.py
+	transformer.py
+```
 ### 生成伪纠错数据  
 ```bash noise.sh```  
 ### 预处理为二进制数据  
